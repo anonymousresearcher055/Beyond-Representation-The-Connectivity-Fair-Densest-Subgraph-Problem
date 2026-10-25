@@ -1,39 +1,178 @@
-# How to Plan an Engaging Cocktail Party: The Edge Fair Densest Subgraph Problem
+<div align="center">
 
-Research code for experiment reproduction on connectivity-fair densest-subgraph extraction.
+# Beyond Representation: The Connectivity-Fair Densest Subgraph Problem
 
-The paper **“How to Plan an Engaging Cocktail Party: The Edge Fair Densest Subgraph Problem”** studies fairness in densest-subgraph discovery from a **connectivity** perspective rather than a **balanced node-representation** perspective. It introduces **group density** and **group-diverse density** as group-aware connectivity measures, and defines two max-min objectives: **edge-fair density** (`eFairD`) and **edge-fair diverse density** (`eFairDivD`). The paper develops greedy, spectral, and deep methods for these objectives and evaluates them on synthetic and real attributed graphs, showing improved worst-group connectivity while preserving competitive overall density. 
+**Research code and additional experimental results for the paper.**
 
-The repository includes implementations of:
-- density-only baselines,
-- diverse-density extraction,
-- fairness-aware greedy methods,
-- spectral methods, and
-- deep GCN-based methods.
+<a href="#quick-start">Quick start</a> ·
+<a href="#objectives">Objectives</a> ·
+<a href="#implemented-methods">Methods</a> ·
+<a href="#input-datasets">Datasets</a> ·
+<a href="#experimental-evaluation">Experimental results</a> ·
+<a href="#reproducibility-and-data-notes">Reproducibility</a>
 
+<br>
 
----
+![Python](https://img.shields.io/badge/Python-research%20code-3776AB)
+![NetworkX](https://img.shields.io/badge/NetworkX-graph%20algorithms-376795)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-Deep%20%26%20Adam-FF6F00)
 
-## What is implemented?
-
-Given an attributed graph \(G=(V,E)\), where nodes are partitioned into groups, the code supports the following objectives:
-
-- **Density**: `D(S) = |E(S)| / |S|`
-- **Group density** for group \(g_i\): `D_i(S) = |E_i(S)| / |S|`
-- **Diverse density**: `D_div(S) = |E_div(S)| / |S|`
-- **Group-diverse density** for group \(g_i\): `D_div,i(S) = |E_div,i(S)| / |S|`
-- **Edge-fair density**: `eFairD(S) = min_i D_i(S)`
-- **Edge-fair diverse density**: `eFairDivD(S) = min_i D_div,i(S)`
-
-At a high level, the repository supports both:
-- **single-objective extraction**, where the goal is to maximize diverse density, and
-- **fairness-aware extraction**, where the goal is to improve the weakest group-specific connectivity score.
-
-This matches the paper’s view of connectivity fairness through two complementary notions:
-- preserving sufficient **group-incident connectivity** for every group, and
-- preserving sufficient **cross-group connectivity** for every group. 
+</div>
 
 ---
+
+This repository accompanies the manuscript **Beyond Representation: The Connectivity-Fair Densest Subgraph Problem**, submitted to **The Web Conference 2027** (Responsible Web).
+
+A dense subgraph can contain similar numbers of nodes from different groups while most of its edges involve only some of those groups. We study **connectivity fairness** in densest subgraph discovery: how to find a dense subgraph without leaving any group poorly connected. We introduce **edge fair density (eFairD)** and **edge fair diverse density (eFairDivD)**, two max-min objectives that measure the weakest group's connectivity.
+
+## Repository overview
+
+The repository provides:
+
+- Greedy, GCN-based Deep, and direct Adam methods for density, Diverse Density, eFairD, and eFairDivD.
+- A single `main.py` that runs selected methods with **editable global parameters**, without command-line arguments.
+- An included DBLP coauthorship graph and a synthetic example with planted subgraphs.
+- Automatic graph normalization, computation of connectivity-fairness metrics, and exported selected subgraphs.
+- The main experimental results from the manuscript **and additional real-world, optimality, runtime, and variability results**.
+
+The full experimental evaluation covers more datasets and baselines than are distributed here. The [reproducibility notes](#reproducibility-and-data-notes) explain that distinction.
+
+## Quick start
+
+### Installation
+
+Clone the repository and create a Python environment. Python **3.10 or newer** is a practical starting point, but the repository does not currently document a fully tested version combination.
+
+```bash
+git clone https://github.com/anonymousresearcher055/Beyond-Representation-The-Connectivity-Fair-Densest-Subgraph-Problem.git
+cd Beyond-Representation-The-Connectivity-Fair-Densest-Subgraph-Problem
+
+python -m venv .venv
+source .venv/bin/activate          # Linux/macOS
+# On Windows: .venv\Scripts\activate
+
+python -m pip install --upgrade pip
+python -m pip install numpy pandas scipy networkx scikit-learn matplotlib tensorflow
+```
+
+The greedy methods use NetworkX and the scientific Python packages. **Deep and Adam require TensorFlow**. GPU acceleration is optional, subject to a compatible TensorFlow installation and hardware environment. The repository does not currently contain a `requirements.txt` or pinned dependency versions, so the installation above is guidance based on the source imports, not a verified environment lockfile.
+
+### Run the included experiments
+
+**All experiment settings are global variables at the top of [`main.py`](main.py). There are no command-line flags.**
+
+For a short first run, edit the configuration to run only the four greedy methods on DBLP:
+
+```python
+DATASETS_TO_RUN = ["dblp_ethnicity"]
+METHODS_TO_RUN = [
+    "greedy",
+    "greedy_diverse",
+    "maxmin_greedy",
+    "maxmin_diverse_greedy",
+]
+N_RUNS_PER_METHOD = 1
+PREPARE_ONLY = False
+```
+
+Then run from the repository root:
+
+```bash
+python main.py
+```
+
+For **all 12 methods on DBLP**, set:
+
+```python
+DATASETS_TO_RUN = ["dblp_ethnicity"]
+METHODS_TO_RUN = None
+```
+
+For **only the fairness-aware eFairD and eFairDivD methods**, set:
+
+```python
+METHODS_TO_RUN = [
+    "maxmin_greedy",
+    "deepGroupMaxMin",
+    "adamGroupMaxMin",
+    "maxmin_diverse_greedy",
+    "deepGroupDiverseMaxMin",
+    "adamGroupDiverseMaxMin",
+]
+```
+
+To run the supplied synthetic example, set `DATASETS_TO_RUN` to its complete folder name:
+
+```python
+DATASETS_TO_RUN = [
+    "n1000__E05__g0_0.34_g1_0.33_g2_0.33__base_unbiased__seed12__run5"
+]
+```
+
+Using `DATASETS_TO_RUN = None` selects **every folder** in `datasets/`, while `METHODS_TO_RUN = None` selects **every implemented method**. Note that running all methods, particularly on DBLP or larger graphs, can be computationally expensive.
+
+### Global configuration
+
+| Variable | Current default | Meaning |
+| :--- | :--- | :--- |
+| `STest` | `"S1"` | Target planted set used for synthetic ground-truth comparisons |
+| `root_name` | `"datasets"` | Directory name containing dataset folders |
+| `DATASETS_ROOT` | `PROJECT_ROOT / root_name` | Input dataset root |
+| `OUT_ROOT` | `PROJECT_ROOT / "synthetic_results" / root_name` | Root for normalized inputs and selected subgraphs |
+| `SUMMARY_CSV` | `PROJECT_ROOT / f"{root_name}_results_{STest}.csv"` | Aggregated result CSV |
+| `DATASETS_TO_RUN` | `["dblp_ethnicity"]` | Folders to process, or `None` for all |
+| `METHODS_TO_RUN` | `None` | Method identifiers to run, or `None` for all 12 |
+| `N_RUNS_PER_METHOD` | `1` | Number of independent invocations per method |
+| `TRAINING_EPOCHS` | `1000` | Training epochs for Deep and Adam variants |
+| `PREPARE_ONLY` | `False` | When `True`, prepare normalized inputs without running the algorithms |
+
+For a ten-run experiment, set `N_RUNS_PER_METHOD = 10`. To change training length, edit `TRAINING_EPOCHS`. **The default one-run execution is not the ten-run protocol used to produce the reported paper tables.** The code records successful and failed runs, and stochastic outcomes may differ between executions.
+
+## Objectives
+
+Let **G = (V, E)** be an undirected graph whose nodes belong to groups g₁, …, gₖ. For any nonempty selected node set **S**, let **E(S)** be its induced edges.
+
+| Measure | Definition | What it counts |
+| :--- | :--- | :--- |
+| **Density** | D(S) = &vert;E(S)&vert; / &vert;S&vert; | All induced edges |
+| **Group density** | D<sub>i</sub>(S) = &vert;E<sub>i</sub>(S)&vert; / &vert;S&vert; | Induced edges incident to group *i*, including within-group edges |
+| **Diverse Density** | D<sup>div</sup>(S) = &vert;E<sup>div</sup>(S)&vert; / &vert;S&vert; | All induced cross-group edges |
+| **Group-diverse density** | D<sub>i</sub><sup>div</sup>(S) = &vert;E<sub>i</sub><sup>div</sup>(S)&vert; / &vert;S&vert; | Induced cross-group edges incident to group *i* |
+
+The two proposed optimization objectives maximize the minimum group-specific density.
+
+**Edge fair density (eFairD)**
+
+eFairD(S) = min<sub>1 ≤ i ≤ k</sub> D<sub>i</sub>(S)
+
+**Edge fair diverse density (eFairDivD)**
+
+eFairDivD(S) = min<sub>1 ≤ i ≤ k</sub> D<sub>i</sub><sup>div</sup>(S)
+
+An edge between two different groups contributes to the relevant measure for both endpoint groups. An edge within a group contributes to its group density, but not to its group-diverse density. **All four measures divide by the total number of selected nodes**, not the number of nodes in an individual group.
+
+eFairD accounts for a group's connections both within and across groups. eFairDivD focuses on its connections to *other* groups. Overall Diverse Density is a comparison objective, not a third proposed fairness problem. With exactly two groups, eFairDivD equals overall Diverse Density for every selected subgraph.
+
+These measures capture structural properties of a graph. They do not, on their own, guarantee fairness of downstream decisions or real-world outcomes.
+
+## Implemented methods
+
+The repository contains **12 executable methods**, organized into three families. The fairness-aware variants target the minimum group-specific score.
+
+| Target objective | Greedy peeling | GCN-based Deep | Direct Adam |
+| :--- | :--- | :--- | :--- |
+| Density | `greedy` (Greedy) | `deep` (Deep) | `adam` (Adam) |
+| Diverse Density | `greedy_diverse` (GreedyDiverse) | `deepDiverse` (DeepDiverse) | `adamDiverse` (AdamDiverse) |
+| eFairD | `maxmin_greedy` (GreedyGroupFairness) | `deepGroupMaxMin` (DeepGroupFairness) | `adamGroupMaxMin` (AdamGroupFairness) |
+| eFairDivD | `maxmin_diverse_greedy` (GreedyGroupDiverseFairness) | `deepGroupDiverseMaxMin` (DeepGroupDiverseFairness) | `adamGroupDiverseMaxMin` (AdamGroupDiverseFairness) |
+
+- **Greedy:** iteratively removes nodes, with the fairness-aware variants guided by the current least-connected group, and retains the best intermediate subgraph.
+- **Deep:** uses a graph convolutional network (GCN) to learn node scores from a continuous objective.
+- **Adam:** directly optimizes trainable node scores with Adam, without a GCN encoder. Deep also uses Adam as an optimizer. The distinction between the two families is **how node scores are represented**, not simply the optimizer name.
+
+The gradient-based methods rank nodes by learned scores and evaluate selected prefixes under the discrete objective. The fairness-aware methods are heuristics, with no general approximation guarantee asserted here.
+
+The *paper* also reports results for **Spectral, Balance Spectral, DDSP, ColApproxGroup, and ColApproxDiv**, but those methods are **not executable from the current `main.py`**. Their experimental results are retained below for comparison.
 
 ## Repository layout
 
@@ -41,7 +180,6 @@ This matches the paper’s view of connectivity fairness through two complementa
 .
 ├── main.py
 ├── greedy_algortihm.py
-├── spectral_densest_subgraph.py
 ├── Deep Dense subgraph/
 │   ├── deepDenseSubgraph.py
 │   └── tools/
@@ -49,212 +187,130 @@ This matches the paper’s view of connectivity fairness through two complementa
 │       ├── gcn.py
 │       ├── metrics.py
 │       └── utils.py
-└── datasets/
-    └── <dataset_folder>/
+├── Adam Dense subgraph/
+│   └── AdamDenseSubgraph.py
+├── datasets/
+│   ├── dblp_ethnicity/
+│   │   ├── dblp_ethnicity.csv
+│   │   └── dblp_ethnicity.edgelist
+│   └── n1000__E05__g0_0.34_g1_0.33_g2_0.33__base_unbiased__seed12__run5/
+│       ├── <dataset-name>.edgelist
+│       ├── <dataset-name>_attributes.csv
+│       ├── planted_subgraphs.csv
+│       └── <additional example metadata>
+└── README.md
 ```
 
-### Main files
+`main.py` loads and normalizes input graphs, calls the selected methods, evaluates the returned subgraphs, and saves results. `greedy_algortihm.py` contains the four greedy routines. The Deep and Adam folders contain the respective optimization implementations. The synthetic example also includes files recording its generation parameters and graph statistics.
 
-- **`main.py`**
-  Main experiment runner. It loads datasets, runs all configured methods, computes summary metrics, and writes results to CSV.
+The layout above omits Python cache artifacts. Folder and source-file names reflect the current repository, including the spelling of `greedy_algortihm.py`.
 
-- **`greedy_algortihm.py`**
-  Greedy peeling implementations for:
-  - density,
-  - diverse density,
-  - edge-fair density (`eFairD`), and
-  - edge-fair diverse density (`eFairDivD`).
+## Input datasets
 
-- **`spectral_densest_subgraph.py`**
-  Eigenvector-sweep implementation for spectral densest-subgraph extraction.
+The public repository currently distributes **DBLP** and **one synthetic example**. Other datasets studied in the paper are not included in this repository.
 
-- **`Deep Dense subgraph/deepDenseSubgraph.py`**
-  Deep learning implementations based on a GCN encoder and differentiable Rayleigh-style objectives.
+Each dataset is stored in a folder under `datasets/`. The main runner identifies the edge list and attribute CSV from the supported filenames or file extensions.
 
-- **`Deep Dense subgraph/tools/deep_densest_models.py`**
-  TensorFlow layers for the deep densest-subgraph objectives.
+### Edge lists
 
----
-
-## Implemented methods
-
-The main script currently runs the following methods:
-
-| Code name | Paper-style name | Type | Target objective |
-|---|---|---|---|
-| `greedy` | Greedy | Greedy | Density |
-| `spectral` | Spectral | Spectral | Density |
-| `deep` | Deep | Deep  | Density |
-| `greedy_diverse` | GreedyDiverse | Greedy | Diverse Density |
-| `spectral_diverse` | SpectralDiverse | Spectral | Diverse Density |
-| `deepDiverse` | DeepDiverse | Deep  | Diverse Density |
-| `maxmin_greedy` | GreedyGroupFairness | Greedy | `eFairD` |
-| `deepGroupMaxMin` | DeepGroupFairness | Deep  | `eFairD` |
-| `maxmin_diverse_greedy` | GreedyGroupDiverseFairness | Greedy | `eFairDivD` |
-| `deepGroupDiverseMaxMin` | DeepGroupDiverseFairness | Deep  | `eFairDivD` |
-
----
-
-## Requirements
-
-A typical Python environment for this repository includes:
-
-- Python 3.9+
-- `numpy`
-- `pandas`
-- `scipy`
-- `networkx`
-- `scikit-learn`
-- `matplotlib`
-- `tensorflow`
-
-Example setup:
-
-```bash
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# Linux / macOS
-# source venv/bin/activate
-
-pip install --upgrade pip
-pip install numpy pandas scipy networkx scikit-learn matplotlib tensorflow
-```
-
----
-
-## Input format
-
-The main runner expects a directory under `datasets/` for each graph.
-
-A dataset folder should contain at least:
+The code accepts either an unheaded, whitespace-separated two-column file:
 
 ```text
-<dataset_folder>/
-├── <dataset_name>.edgelist
-├── <dataset_name>_attributes.csv
-└── planted_subgraphs.csv          # optional but recommended for synthetic data
+0 1
+1 2
+2 3
 ```
 
-### 1) Edge list
+or a CSV whose header begins with `source,target` or `u,v`. For example, the included DBLP edge list starts with:
 
-Space-separated edge list:
-
-```text
-u v
-u w
-v w
+```csv
+source,target,time
+11,108,1996
+11,2225,1996
 ```
 
-### 2) Attribute file
+The current runner uses only the first two columns of the DBLP file. It ignores timestamps when constructing the undirected coauthorship graph. Self-loops are removed and repeated unordered node pairs are collapsed to a single edge.
 
-CSV file with a node column and an `attribute` column.
+### Node-group attributes
 
-Recommended format:
+The synthetic example uses numeric groups:
 
 ```csv
 node,attribute
 0,0
 1,2
-2,1
+2,0
 ```
 
-The loaders are flexible with node-column naming and accept variants such as:
-- `node`
-- `nodes`
-- `node_id`
-- `node_idx`
+DBLP uses string-valued groups:
 
-### 3) Ground-truth planted sets (optional)
+```csv
+node_id,ethnicity
+1,asian
+2,asian
+3,asian
+```
 
-For synthetic datasets, `planted_subgraphs.csv` can be used to evaluate overlap against known planted sets.
+The input loader recognizes `node_id`, `node`, and `node_idx` as node-identifier columns, and `attribute` or `ethnicity` as the group column. All edge endpoints must have attributes. No manual DBLP conversion is required.
 
-Example format:
+### Optional planted ground truth
+
+Synthetic datasets can include `planted_subgraphs.csv` with a selected-set name and node ID, for example:
 
 ```csv
 set_name,node
 S1,1
 S1,3
 S2,14
-S2,27
 ```
 
----
+The main runner uses these sets for overlap metrics such as Jaccard, precision, recall, and F1. These metrics are not meaningful for datasets without planted ground truth.
 
-## Running the code
 
-### Quickstart
+The original dataset files are not changed. The generated `_prepared` folder records the mappings used for each dataset.
 
-From the repository root:
+## Outputs and metrics
 
-```bash
-python main.py
-```
-
-The script scans all folders under `datasets/`, runs the configured methods, and writes summary results.
-
-### Main configuration
-
-A few useful constants are defined near the top of `main.py`:
-
-- **`root_name`**: dataset root directory (default: `datasets`)
-- **`STest`**: planted target set name used for synthetic evaluation (default: `S1`)
-- **`N_RUNS_PER_METHOD`**: number of repetitions per method
-- **`OUT_ROOT`**: output directory for extracted subgraphs
-
-If you want to run a different dataset root or evaluate against a different planted set, edit these constants in `main.py`.
-
----
-
-## Outputs
-
-The code writes two types of outputs.
-
-### 1) Per-run extracted subgraphs
-
-For each method and dataset, the selected node set is written to:
+With the default `root_name = "datasets"`, the runner generates:
 
 ```text
-synthetic_results/<root_name>/<method>/<dataset_folder>/densest_subgraph_runXX.csv
+synthetic_results/
+└── datasets/
+    ├── _prepared/
+    │   └── <dataset_folder>/
+    │       ├── graph.edgelist
+    │       ├── attributes.csv
+    │       ├── node_mapping.csv
+    │       ├── group_mapping.csv
+    │       └── planted_subgraphs.csv   # only if provided
+    ├── greedy/
+    │   └── <dataset_folder>/
+    │       └── densest_subgraph_run00.csv
+    └── <other_method>/
+        └── <dataset_folder>/
+            └── densest_subgraph_run00.csv
+
+datasets_results_S1.csv
 ```
 
-These files contain the extracted node ids and, when available, the node attributes.
+Each extracted-subgraph CSV contains `node_id` and `attribute`. The summary CSV contains per-method averages of successfully completed runs, including:
 
-### 2) Summary results
+- `density`, `diverse_density`, and `subgraph_size`.
+- `group_density_min`, `group_density_max`, and `group_density_avg`.
+- `group_diverse_density_min`, `group_diverse_density_max`, and `group_diverse_density_avg`.
+- `runtime_sec` and run-success information.
+- Ground-truth overlap metrics, when a planted set is available.
 
-After all runs, `main.py` writes an aggregated CSV of method-level metrics:
+The **minimum group density** corresponds to eFairD. The **minimum group-diverse density** corresponds to eFairDivD. The main runner currently reports means of successful runs, but does not generate all the runtime, standard-deviation, exact-optimization, or comparison tables shown later in this README.
 
-```text
-<root_name>_results_<STest>.csv
-```
+## Reproducibility and data notes
 
-Typical columns include:
-- `density`
-- `group_density_min`, `group_density_max`, `group_density_avg`
-- `group_diverse_density_min`, `group_diverse_density_max`, `group_diverse_density_avg`
-- `diverse_density`
-- `subgraph_size`
-- `runtime_sec`
-- overlap metrics with planted ground truth, such as `gt_jaccard`, `gt_precision`, `gt_recall`, and `gt_f1`
+The repository provides **12 executable methods**, including density and diverse-density baselines, and two example datasets. The tables below report a wider evaluation from the manuscript and additional experiments, including methods and datasets not distributed in this repository.
 
----
+Specifically, the current repository does **not** include all real datasets, all synthetic graph generators and configurations, external baseline implementations, Gurobi MILP scripts, or the complete ten-run outputs. Accordingly, `python main.py` is an entry point for the available methods and data, **not a one-command reproduction of every result in the paper or this README**.
 
-## Deep models
+The DBLP attribute file associates ethnicity-category labels with individual researchers. It does not contain names or DBLP profile identifiers, but coauthorship graph structure may still allow records to be linked to publicly identifiable people. The released file should not be described as proven anonymous. The dataset's label-generation methodology and whether these categories are self-identified are **not documented here**, so the labels should not be interpreted as verified personal ethnicity. Data provenance and release permissions should be reviewed separately.
 
-The deep variants use a GCN encoder followed by a learnable scoring layer and optimize differentiable Rayleigh-style relaxations of the target objective.
-
-The current defaults in the repository are:
-- optimizer: **Adam**
-- learning rate: **0.01**
-- training epochs: **1000**
-
-Implemented deep variants include:
-- **Deep** for density,
-- **DeepDiverse** for diverse density,
-- **DeepGroupFairness** for `eFairD`, and
-- **DeepGroupDiverseFairness** for `eFairDivD`.
-
----
 ## Experimental evaluation
 
 We evaluate the methods on synthetic and real attributed networks. The synthetic experiments isolate the effects of background connectivity and planted edge patterns on density and fairness. The real networks vary in size, group representation, homophily, and cross-group connectivity. We measure Density, Diverse Density, `eFairD`, `eFairDivD`, and selected subgraph size. Results are averaged over 10 runs.
@@ -376,6 +432,12 @@ We generate random-regular background graphs with two disjoint planted sets, S�
 | Group fraction (global, planted) | (0.33, 0.33) | (0.33, 0.33) |
 | Same-group proportions (RR, BB, YY) | (0.083, 0.083, 0.083) | (0.05, 0.05, 0.05) |
 | Cross-group proportions (RB, RY, BY) | (0.25, 0.25, 0.25) | (0.75, 0.05, 0.05) |
+
+#### Five-group homophily setting
+
+The latest paper also reports a separate homophily experiment with **five equally sized groups** and three disjoint planted sets S₁, S₂, and S₃. Their sizes are 200, 100, and 50 nodes, with respective added-edge budgets 3,300, 700, and 300. The same-group edge fraction pₕ varies from 0.0 to 1.0 in steps of 0.1. The planted sets differ in homophily and group composition while the construction preserves the intended graph-wide homophily. Results are averaged over 10 random graphs per setting.
+
+This five-group experiment is distinct from the two-group eFairD and three-group eFairDivD background-degree experiments above. Its complete generation scripts and sweep inputs are **not included in the present GitHub repository**.
 
 ### Experiments
 
@@ -682,5 +744,6 @@ We examine the variability of the Deep and Adam fairness-aware methods in the ob
 | Pokec-a | Adam | 8.209 ± 0.0001 | 6393.3 ± 2.8 | 96.82 ± 1.52 |
 | Pokec-g | Deep | 22.093 ± 0.017 | 70893.8 ± 2355.8 | 179.5 ± 3.3 |
 | Pokec-g | Adam | 29.532 ± 0.000 | 6117.0 ± 0.0 | 110.41 ± 3.29 |
+
 
 
