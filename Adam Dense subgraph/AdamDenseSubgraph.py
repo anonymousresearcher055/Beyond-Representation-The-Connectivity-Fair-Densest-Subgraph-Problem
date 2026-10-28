@@ -1,24 +1,3 @@
-"""
-GCN-free Adam implementations for the densest-subgraph objectives.
-
-This module keeps the graph loading, objective construction, and sweep-rounding
-logic of deepDenseSubgraph.py, but removes the GCN and neural scorer entirely.
-Instead, it directly optimizes one pair of trainable logits per node with Adam.
-The first softmax component is used as the continuous membership score p_v.
-
-Implemented methods:
-    AdamDensestSubgraph
-    AdamDensestDiverseSubgraph
-    AdamDensestGroupSubgraphMaxMin
-    AdamDensestGroupDiverseSubgraphMaxMin
-
-The continuous objectives match the losses used by the original implementation:
-    density:       p^T A p / p^T p
-    group fairness: soft-min over group-specific Rayleigh quotients
-
-No GCN, node features, message passing, or graph normalization are used during
-optimization. The graph enters only through the loss matrices.
-"""
 
 import numpy as np
 import pandas as pd
@@ -34,7 +13,7 @@ tf.compat.v1.enable_v2_behavior()
 # -----------------------------------------------------------------------------
 
 def load_graphGroup(edgelist_file, features_file, featuresType, groupAttr):
-    """Compatibility loader retained from deepDenseSubgraph.py."""
+
     edges = pd.read_csv(edgelist_file, sep=" ", header=None, names=["u", "v"])
     edges["u"] = pd.to_numeric(edges["u"], errors="coerce")
     edges["v"] = pd.to_numeric(edges["v"], errors="coerce")
@@ -98,7 +77,7 @@ def load_graphGroup(edgelist_file, features_file, featuresType, groupAttr):
         (coo.data[mask_g], (coo.row[mask_g], coo.col[mask_g])), shape=(n, n)
     ).tocsr()
 
-    # Retained only for API compatibility. Adam methods below do not use features.
+
     if featuresType == "degree":
         deg = np.asarray(adjacency.sum(axis=1)).ravel().astype(np.float32)
         features = sp.diags(deg, format="csr")
@@ -193,7 +172,7 @@ def load_graphDiversity(edgelist_file, features_file, featuresType):
         (coo.data[mask_div], (coo.row[mask_div], coo.col[mask_div])), shape=(n, n)
     ).tocsr()
 
-    # Retained only for API compatibility. Adam methods below do not use features.
+
     if featuresType == "degree":
         deg = np.asarray(adjacency.sum(axis=1)).ravel().astype(np.float32)
         features = sp.diags(deg, format="csr")
@@ -262,7 +241,7 @@ def load_graph(edgelist_file, features_file, featuresType="id", return_nodes=Tru
     node_attribute_dict = dict(zip(feat["node_idx"].values, feat["attribute"].values))
     node_attribute_df = feat[["node_idx", "attribute"]].copy()
 
-    # Retained only for API compatibility. Adam methods below do not use features.
+
     if featuresType == "degree":
         deg = np.asarray(adjacency.sum(axis=1)).ravel().astype(np.float32)
         features = sp.diags(deg, offsets=0, format="csr")
@@ -277,9 +256,7 @@ def load_graph(edgelist_file, features_file, featuresType="id", return_nodes=Tru
     return adjacency, features, node_attribute_dict, node_attribute_df, nodes
 
 
-# -----------------------------------------------------------------------------
-# Sparse TensorFlow conversion
-# -----------------------------------------------------------------------------
+
 
 def convert_scipy_sparse_to_sparse_tensor(matrix):
     matrix = matrix.tocoo()
@@ -292,11 +269,10 @@ def convert_scipy_sparse_to_sparse_tensor(matrix):
 
 
 # -----------------------------------------------------------------------------
-# Direct Adam optimizer
+# Adam optimizer
 # -----------------------------------------------------------------------------
 
 class DirectNodeLogits(tf.Module):
-    """One directly trainable two-class logit vector per node."""
 
     def __init__(self, n_nodes, tau=0.5, init_std=0.01, seed=None, name=None):
         super().__init__(name=name)
@@ -307,7 +283,7 @@ class DirectNodeLogits(tf.Module):
                 [n_nodes, 2], mean=0.0, stddev=init_std, dtype=tf.float32
             )
         else:
-            # Stateless initialization makes a supplied seed exactly reproducible.
+
             initial = tf.random.stateless_normal(
                 [n_nodes, 2], seed=[int(seed), int(seed) + 1],
                 mean=0.0, stddev=init_std, dtype=tf.float32
@@ -342,7 +318,7 @@ def _direct_adam_single_objective(
     log_every=100,
     clipnorm=None,
 ):
-    """Directly optimize the same single Rayleigh loss as DenseSubgraph."""
+
     scorer = DirectNodeLogits(
         n_nodes=n_nodes, tau=tau, init_std=init_std, seed=seed
     )
@@ -355,7 +331,7 @@ def _direct_adam_single_objective(
             ray = _rayleigh(p, adjacency_tf)
             loss = -ray
 
-            # Matches DenseSubgraph's optional empty-set penalty.
+
             if lambda_empty and lambda_empty > 0.0:
                 loss = loss + tf.cast(lambda_empty, tf.float32) * (
                     -tf.math.log(tf.reduce_sum(p) + 1e-9)
@@ -391,10 +367,7 @@ def _direct_adam_maxmin_objective(
     log_every=100,
     clipnorm=None,
 ):
-    """
-    Directly optimize the same soft-min group Rayleigh loss currently used by
-    DenseSubgraphMaxMin, but without a GCN or Dense scorer.
-    """
+
     scorer = DirectNodeLogits(
         n_nodes=n_nodes, tau=tau, init_std=init_std, seed=seed
     )
@@ -414,11 +387,11 @@ def _direct_adam_maxmin_objective(
                 rays.append(tf.squeeze(num) / den)
             rays = tf.stack(rays, axis=0)
 
-            # Same soft-min loss as DenseSubgraphMaxMin.
+
             softmin_ray = -tau_min_tf * tf.reduce_logsumexp(-rays / tau_min_tf)
             loss = -softmin_ray
 
-            # Matches DenseSubgraphMaxMin's optional empty-set penalty.
+  
             if lambda_empty and lambda_empty > 0.0:
                 loss = loss + tf.cast(lambda_empty, tf.float32) / (
                     tf.reduce_sum(p) + 1e-9
@@ -442,9 +415,7 @@ def _direct_adam_maxmin_objective(
     return scores, probs
 
 
-# -----------------------------------------------------------------------------
-# Sweep rounding
-# -----------------------------------------------------------------------------
+
 
 def sweep_densest_prefix(A_csr, scores):
     n = A_csr.shape[0]
@@ -619,9 +590,6 @@ def sweep_maxmin_prefix_fast(group_adjs_csr, scores):
     return best_nodes, best_val, best_group_dens
 
 
-# -----------------------------------------------------------------------------
-# Public Adam-only implementations
-# -----------------------------------------------------------------------------
 
 def AdamDensestSubgraph(
     edgelist_path,
@@ -637,7 +605,7 @@ def AdamDensestSubgraph(
     log_every=100,
     clipnorm=None,
 ):
-    """GCN-free direct-Adam version of deepDensestSubgraph."""
+
     adjacency, _, _, _, _ = load_graph(
         edgelist_path, attributes_path, featuresType
     )
@@ -681,7 +649,7 @@ def AdamDensestDiverseSubgraph(
     log_every=100,
     clipnorm=None,
 ):
-    """GCN-free direct-Adam version of deepDensestDiverseSubgraph."""
+
     _, diversity_adjacency, _, _, _, _ = load_graphDiversity(
         edgelist_path, attributes_path, featuresType
     )
@@ -727,7 +695,7 @@ def AdamDensestGroupSubgraphMaxMin(
     log_every=100,
     clipnorm=None,
 ):
-    """GCN-free direct-Adam version of the group-density fairness method."""
+
     adjacency, _, node_attr_dict, _, _ = load_graph(
         edgelist_path, attributes_path, featuresType
     )
@@ -763,7 +731,7 @@ def AdamDensestGroupSubgraphMaxMin(
     print("best_group_densities:", best_group_densities)
     print("best_overall_density:", best_overall_density)
 
-    # Keep the same return structure as deepDensestGroupSubgraphMaxMin.
+
     return best_overall_density, best_nodes, scores, probs, groups
 
 
@@ -771,7 +739,7 @@ def AdamDensestGroupDiverseSubgraphMaxMin(
     edgelist_path,
     attributes_path,
     featuresType="id",
-    incident=True,  # retained for call compatibility; not used for diverse groups
+    incident=True, 
     epochs=1000,
     lr=0.01,
     lambda_empty=0.0,
@@ -782,7 +750,7 @@ def AdamDensestGroupDiverseSubgraphMaxMin(
     log_every=100,
     clipnorm=None,
 ):
-    """GCN-free direct-Adam version of the group-diverse fairness method."""
+
     adjacency, _, node_attr_dict, _, _ = load_graph(
         edgelist_path, attributes_path, featuresType
     )
@@ -818,5 +786,5 @@ def AdamDensestGroupDiverseSubgraphMaxMin(
     print("best_group_diverse_densities:", best_group_densities)
     print("best_overall_density:", best_overall_density)
 
-    # Keep the same return structure as deepDensestGroupDiverseSubgraphMaxMin.
+
     return best_overall_density, best_nodes, scores, probs, groups
